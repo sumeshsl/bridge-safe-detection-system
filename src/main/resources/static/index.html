@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Municipal Clearance Detector Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }
+        .container { max-width: 1400px; margin: 0 auto; }
+        header {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        h1 { color: #333; font-size: 28px; }
+        .connection-status {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 14px;
+            margin-left: 20px;
+        }
+        .status-connected { background: #4CAF50; color: white; }
+        .status-disconnected { background: #f44336; color: white; }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .stat-label { color: #666; font-size: 14px; margin-bottom: 10px; }
+        .stat-value { font-size: 36px; font-weight: bold; color: #333; }
+        .stat-critical { color: #f44336; }
+        .stat-warning { color: #ff9800; }
+        .stat-success { color: #4CAF50; }
+        .violations-section {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        h2 { color: #333; margin-bottom: 20px; font-size: 22px; }
+        .violations-list { max-height: 400px; overflow-y: auto; }
+        .violation-item {
+            border-left: 4px solid #ccc;
+            padding: 15px;
+            margin-bottom: 10px;
+            background: #f9f9f9;
+            border-radius: 5px;
+            animation: slideIn 0.3s ease-out;
+        }
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(-20px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+        .violation-critical { border-left-color: #f44336; }
+        .violation-high { border-left-color: #ff9800; }
+        .violation-medium { border-left-color: #ffeb3b; }
+        .violation-low { border-left-color: #4CAF50; }
+        .violation-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .violation-location { font-weight: bold; color: #333; }
+        .violation-severity {
+            padding: 3px 10px;
+            border-radius: 15px;
+            font-size: 12px;
+            font-weight: bold;
+            color: white;
+        }
+        .severity-CRITICAL { background: #f44336; }
+        .severity-HIGH { background: #ff9800; }
+        .severity-MEDIUM { background: #ffeb3b; color: #333; }
+        .severity-LOW { background: #4CAF50; }
+        .violation-details { font-size: 14px; color: #666; }
+        .violation-time { font-size: 12px; color: #999; margin-top: 5px; }
+        .notifications {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            max-width: 400px;
+            z-index: 1000;
+        }
+        .notification {
+            background: white;
+            padding: 15px;
+            border-radius: 5px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+            margin-bottom: 10px;
+            border-left: 4px solid #4CAF50;
+            animation: slideInRight 0.3s ease-out;
+        }
+        @keyframes slideInRight {
+            from { opacity: 0; transform: translateX(100%); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+        .notification-violation { border-left-color: #f44336; }
+        .notification-detector { border-left-color: #2196F3; }
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover { background: #5568d3; }
+        .detectors-section {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .detector-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
+        }
+        .detector-item {
+            padding: 15px;
+            background: #f5f5f5;
+            border-radius: 5px;
+            border-left: 4px solid #4CAF50;
+        }
+        .detector-offline { border-left-color: #f44336; opacity: 0.7; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Municipal Clearance Detector Dashboard</h1>
+            <span id="connectionStatus" class="connection-status status-disconnected">Disconnected</span>
+            <button onclick="refreshStats()" style="float: right;">Refresh Stats</button>
+        </header>
+        
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">Total Detectors</div>
+                <div class="stat-value" id="totalDetectors">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Active Detectors</div>
+                <div class="stat-value stat-success" id="activeDetectors">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Pending Violations</div>
+                <div class="stat-value stat-warning" id="pendingViolations">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Critical Violations</div>
+                <div class="stat-value stat-critical" id="criticalViolations">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Violations Today</div>
+                <div class="stat-value" id="violationsToday">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Total Violations</div>
+                <div class="stat-value" id="totalViolations">-</div>
+            </div>
+        </div>
+        
+        <div class="violations-section">
+            <h2>Recent Violations</h2>
+            <div id="violationsList" class="violations-list">
+                <p style="color: #999;">Waiting for violations...</p>
+            </div>
+        </div>
+        
+        <div class="detectors-section">
+            <h2>Registered Detectors</h2>
+            <div id="detectorsList" class="detector-list">
+                <p style="color: #999;">Loading detectors...</p>
+            </div>
+        </div>
+    </div>
+    
+    <div id="notifications" class="notifications"></div>
+    
+    <script>
+        const API_BASE = 'http://localhost:8080/api';
+        const WS_URL = 'http://localhost:8080/ws';
+        
+        let stompClient = null;
+        let violations = [];
+        
+        function connect() {
+            const socket = new SockJS(WS_URL);
+            stompClient = Stomp.over(socket);
+            
+            stompClient.connect({}, function(frame) {
+                console.log('Connected: ' + frame);
+                updateConnectionStatus(true);
+                
+                stompClient.subscribe('/topic/violations', function(message) {
+                    const notification = JSON.parse(message.body);
+                    handleViolationNotification(notification);
+                });
+                
+                stompClient.subscribe('/topic/stats', function(message) {
+                    const notification = JSON.parse(message.body);
+                    if (notification.data) {
+                        updateStats(notification.data);
+                    }
+                });
+                
+                stompClient.subscribe('/topic/detectors', function(message) {
+                    const notification = JSON.parse(message.body);
+                    handleDetectorNotification(notification);
+                });
+                
+                stompClient.send("/app/dashboard/stats", {}, {});
+            }, function(error) {
+                console.error('WebSocket error:', error);
+                updateConnectionStatus(false);
+                setTimeout(connect, 5000);
+            });
+        }
+        
+        function updateConnectionStatus(connected) {
+            const status = document.getElementById('connectionStatus');
+            if (connected) {
+                status.textContent = 'Connected (WebSocket)';
+                status.className = 'connection-status status-connected';
+            } else {
+                status.textContent = 'Disconnected';
+                status.className = 'connection-status status-disconnected';
+            }
+        }
+        
+        function handleViolationNotification(notification) {
+            console.log('Violation notification:', notification);
+            
+            if (notification.notification_type === 'NEW_VIOLATION') {
+                showNotification('New Violation Detected!', 
+                    notification.message, 'notification-violation');
+                
+                if (notification.data) {
+                    addViolationToList(notification.data);
+                }
+            } else if (notification.notification_type === 'VIOLATION_ACK') {
+                showNotification('Violation Acknowledged', 
+                    notification.message, 'notification-detector');
+            }
+        }
+        
+        function handleDetectorNotification(notification) {
+            console.log('Detector notification:', notification);
+            showNotification(
+                notification.notification_type === 'DETECTOR_ONLINE' ? 'Detector Online' : 'Detector Offline',
+                notification.message,
+                'notification-detector'
+            );
+            loadDetectors();
+        }
+        
+        function showNotification(title, message, className = '') {
+            const notificationsDiv = document.getElementById('notifications');
+            const notification = document.createElement('div');
+            notification.className = `notification ${className}`;
+            notification.innerHTML = `<strong>${title}</strong><br>${message}`;
+            notificationsDiv.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.remove();
+            }, 5000);
+        }
+        
+        function addViolationToList(violation) {
+            violations.unshift(violation);
+            if (violations.length > 20) {
+                violations = violations.slice(0, 20);
+            }
+            renderViolations();
+        }
+        
+        function renderViolations() {
+            const list = document.getElementById('violationsList');
+            if (violations.length === 0) {
+                list.innerHTML = '<p style="color: #999;">No violations detected yet.</p>';
+                return;
+            }
+            
+            list.innerHTML = violations.map(v => `
+                <div class="violation-item violation-${v.severity.toLowerCase()}">
+                    <div class="violation-header">
+                        <span class="violation-location">${v.location}</span>
+                        <span class="violation-severity severity-${v.severity}">${v.severity}</span>
+                    </div>
+                    <div class="violation-details">
+                        Detected: <strong>${v.detected_height.toFixed(2)} ft</strong> | 
+                        Clearance: <strong>${v.clearance_height.toFixed(2)} ft</strong> | 
+                        Excess: <strong>${v.excess_height.toFixed(2)} ft</strong>
+                    </div>
+                    <div class="violation-time">
+                        ${new Date(v.detected_at).toLocaleString()}
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        function updateStats(stats) {
+            document.getElementById('totalDetectors').textContent = stats.total_detectors;
+            document.getElementById('activeDetectors').textContent = stats.active_detectors;
+            document.getElementById('pendingViolations').textContent = stats.pending_violations;
+            document.getElementById('criticalViolations').textContent = stats.critical_violations;
+            document.getElementById('violationsToday').textContent = stats.violations_today;
+            document.getElementById('totalViolations').textContent = stats.total_violations;
+        }
+        
+        async function refreshStats() {
+            try {
+                const response = await fetch(`${API_BASE}/dashboard/stats`);
+                const stats = await response.json();
+                updateStats(stats);
+                showNotification('Stats Updated', 'Dashboard statistics refreshed');
+            } catch (error) {
+                console.error('Error fetching stats:', error);
+            }
+        }
+        
+        async function loadViolations() {
+            try {
+                const response = await fetch(`${API_BASE}/violations/pending`);
+                violations = await response.json();
+                renderViolations();
+            } catch (error) {
+                console.error('Error loading violations:', error);
+            }
+        }
+        
+        async function loadDetectors() {
+            try {
+                const response = await fetch(`${API_BASE}/detectors`);
+                const detectors = await response.json();
+                renderDetectors(detectors);
+            } catch (error) {
+                console.error('Error loading detectors:', error);
+            }
+        }
+        
+        function renderDetectors(detectors) {
+            const list = document.getElementById('detectorsList');
+            if (detectors.length === 0) {
+                list.innerHTML = '<p style="color: #999;">No detectors registered.</p>';
+                return;
+            }
+            
+            list.innerHTML = detectors.map(d => `
+                <div class="detector-item ${d.active ? '' : 'detector-offline'}">
+                    <strong>${d.device_id}</strong><br>
+                    <small>${d.location}</small><br>
+                    <small>Clearance: ${d.clearance_height} ft</small><br>
+                    <small style="color: ${d.active ? '#4CAF50' : '#f44336'}">
+                        ${d.active ? '● Online' : '● Offline'}
+                    </small>
+                </div>
+            `).join('');
+        }
+        
+        window.onload = function() {
+            connect();
+            loadViolations();
+            loadDetectors();
+            refreshStats();
+            
+            setInterval(() => {
+                if (!stompClient || !stompClient.connected) {
+                    refreshStats();
+                    loadDetectors();
+                }
+            }, 30000);
+        };
+    </script>
+</body>
+</html>
