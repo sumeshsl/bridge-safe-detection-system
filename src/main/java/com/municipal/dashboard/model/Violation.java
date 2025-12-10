@@ -35,10 +35,12 @@ public class Violation {
     
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private ViolationSeverity severity;
+    @Builder.Default
+    private ViolationSeverity severity = ViolationSeverity.LOW;
     
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
+    @Builder.Default
     private ViolationStatus status = ViolationStatus.DETECTED;
     
     private String notes;
@@ -49,23 +51,40 @@ public class Violation {
     private LocalDateTime acknowledgedAt;
     
     @Column(nullable = false)
-    private LocalDateTime createdAt;
+    @Builder.Default
+    private LocalDateTime createdAt = LocalDateTime.now();
     
     @PrePersist
     protected void onCreate() {
-        createdAt = LocalDateTime.now();
-        detectedAt = LocalDateTime.now();
+        // Set timestamp if not already set
+        if (createdAt == null) {
+            createdAt = LocalDateTime.now();
+        }
+        if (detectedAt == null) {
+            detectedAt = LocalDateTime.now();
+        }
         
-        excessHeight = detectedHeight - clearanceHeight;
+        // Calculate excess height
+        if (excessHeight == null && detectedHeight != null && clearanceHeight != null) {
+            excessHeight = detectedHeight - clearanceHeight;
+        }
         
-        if (excessHeight > 2.0) {
-            severity = ViolationSeverity.CRITICAL;
-        } else if (excessHeight > 1.0) {
-            severity = ViolationSeverity.HIGH;
-        } else if (excessHeight > 0.5) {
-            severity = ViolationSeverity.MEDIUM;
-        } else {
-            severity = ViolationSeverity.LOW;
+        // Set severity based on excess height
+        if (severity == null && excessHeight != null) {
+            if (excessHeight > 2.0) {
+                severity = ViolationSeverity.CRITICAL;
+            } else if (excessHeight > 1.0) {
+                severity = ViolationSeverity.HIGH;
+            } else if (excessHeight > 0.5) {
+                severity = ViolationSeverity.MEDIUM;
+            } else {
+                severity = ViolationSeverity.LOW;
+            }
+        }
+        
+        // Set default status if null
+        if (status == null) {
+            status = ViolationStatus.DETECTED;
         }
     }
 }
