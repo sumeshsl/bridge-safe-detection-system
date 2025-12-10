@@ -24,8 +24,8 @@ server:
 mqtt:
   broker:
     url: tcp://localhost:1883
-    username: admin
-    password: admin
+    username:   # Leave empty if no auth
+    password:   # Leave empty if no auth
   client:
     id: municipal-dashboard-${random.value}
   topics:
@@ -39,3 +39,10 @@ app:
     height-threshold: 13.5
   detector:
     heartbeat-timeout: 300
+
+# Logging
+logging:
+  level:
+    com.municipal.dashboard: DEBUG
+    org.springframework.integration: INFO
+    org.springframework.integration.mqtt: DEBUG
